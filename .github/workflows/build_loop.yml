@@ -2,10 +2,10 @@ name: 4. Build Loop
 run-name: Build Loop (${{ github.ref_name }})
 on:
   workflow_dispatch:
-  
+
   ## Remove the "#" sign from the beginning of the line below to get automated builds on push (code changes in your repository)
   #push:
-  
+
   schedule:
     - cron: '0 8 * * 3' # Checks for updates at 08:00 UTC every Wednesday
     - cron: '0 6 1 * *' # Builds the app on the 1st of every month at 06:00 UTC
@@ -21,7 +21,7 @@ jobs:
     name: Validate
     uses: ./.github/workflows/validate_secrets.yml
     secrets: inherit
-  
+
   # Checks if GH_PAT holds workflow permissions
   # Checks for existence of alive branch; if non-existent creates it
   check_alive_and_permissions:
@@ -32,24 +32,24 @@ jobs:
       contents: write
     outputs:
       WORKFLOW_PERMISSION: ${{ steps.workflow-permission.outputs.has_permission }}
-    
+
     steps:
     - name: Check for workflow permissions
       id: workflow-permission
-      env: 
+      env:
         TOKEN_TO_CHECK: ${{ secrets.GH_PAT }}
       run: |
         PERMISSIONS=$(curl -sS -f -I -H "Authorization: token ${{ env.TOKEN_TO_CHECK }}" https://api.github.com | grep ^x-oauth-scopes: | cut -d' ' -f2-);
-        
+
         if [[ $PERMISSIONS =~ "workflow" || $PERMISSIONS == "" ]]; then
           echo "GH_PAT holds workflow permissions or is fine-grained PAT."
           echo "has_permission=true" >> $GITHUB_OUTPUT # Set WORKFLOW_PERMISSION to false.
-        else 
+        else
           echo "GH_PAT lacks workflow permissions."
           echo "Automated build features will be skipped!"
           echo "has_permission=false" >> $GITHUB_OUTPUT # Set WORKFLOW_PERMISSION to false.
         fi
-    
+
     - name: Check for alive branch
       if: steps.workflow-permission.outputs.has_permission == 'true'
       env:
@@ -62,7 +62,7 @@ jobs:
           echo "Branch 'alive' does not exist."
           echo "ALIVE_BRANCH_EXISTS=false" >> $GITHUB_ENV # Set ALIVE_BRANCH_EXISTS to false
         fi
-    
+
     - name: Create alive branch
       if: env.ALIVE_BRANCH_EXISTS == 'false'
       env:
@@ -73,7 +73,7 @@ jobs:
           | jq '.[] | select(.ref == "refs/heads/dev" ) | .object.sha' \
           | tr -d '"'
         );
-        
+
         # Create alive branch based on LoopKit/LoopWorkspace:dev
         gh api \
           --method POST \
@@ -82,16 +82,16 @@ jobs:
           /repos/${{ github.repository_owner }}/LoopWorkspace/git/refs \
           -f ref='refs/heads/alive' \
           -f sha=$SHA
-  
+
   # Checks for changes in upstream repository; if changes exist prompts sync for build
   # Performs keepalive to avoid stale fork
   check_latest_from_upstream:
     needs: [validate, check_alive_and_permissions]
     runs-on: ubuntu-latest
     name: Check upstream and keep alive
-    outputs: 
+    outputs:
       NEW_COMMITS: ${{ steps.sync.outputs.has_new_commits }}
-    
+
     steps:
     - name: Checkout target repo
       if: |
@@ -101,7 +101,7 @@ jobs:
       with:
         token: ${{ secrets.GH_PAT }}
         ref: alive
-    
+
     - name: Sync upstream changes
       if: | # do not run the upstream sync action on the upstream repository
         needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
@@ -114,26 +114,26 @@ jobs:
         target_repo_token: ${{ secrets.GH_PAT }}
         upstream_sync_branch: ${{ env.UPSTREAM_BRANCH }}
         upstream_sync_repo: ${{ env.UPSTREAM_REPO }}
-    
+
     # Display a sample message based on the sync output var 'has_new_commits'
     - name: New commits found
       if: |
         needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
         vars.SCHEDULED_SYNC != 'false' && steps.sync.outputs.has_new_commits == 'true'
       run: echo "New commits were found to sync."
-    
+
     - name: No new commits
       if: |
-        needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' && 
+        needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
         vars.SCHEDULED_SYNC != 'false' && steps.sync.outputs.has_new_commits == 'false'
       run: echo "There were no new commits."
-    
+
     - name: Show value of 'has_new_commits'
       if: needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' && vars.SCHEDULED_SYNC != 'false'
       run: |
         echo ${{ steps.sync.outputs.has_new_commits }}
         echo "NEW_COMMITS=${{ steps.sync.outputs.has_new_commits }}" >> $GITHUB_OUTPUT
-    
+
     # Keep repository "alive": add empty commits to ALIVE_BRANCH after "time_elapsed" days of inactivity to avoid inactivation of scheduled workflows
     - name: Keep alive
       if: |
@@ -142,7 +142,7 @@ jobs:
       uses: gautamkrishnar/keepalive-workflow@v1 # using the workflow with default settings
       with:
         time_elapsed: 20 # Time elapsed from the previous commit to trigger a new automated commit (in days)
-    
+
     - name: Show scheduled build configuration message
       if: needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION != 'true'
       run: |
@@ -151,7 +151,7 @@ jobs:
         echo "Synchronizing your fork of <code>LoopWorkspace</code> with the upstream repository <code>LoopKit/LoopWorkspace</code> will be skipped." >> $GITHUB_STEP_SUMMARY
         echo "If you want to enable automatic builds and updates for your Loop, please follow the instructions \
               under the following path <code>LoopWorkspace/fastlane/testflight.md</code>." >> $GITHUB_STEP_SUMMARY
-  
+
   # Builds Loop
   build:
     name: Build
@@ -168,7 +168,7 @@ jobs:
     steps:
       - name: Select Xcode version
         run: "sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer"
-      
+
       - name: Checkout Repo for syncing
         if: |
           needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
@@ -176,8 +176,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT }}
-          ref: ${{ env.TARGET_BRANCH }} 
-      
+          ref: ${{ env.TARGET_BRANCH }}
+
       - name: Sync upstream changes
         if: | # do not run the upstream sync action on the upstream repository
           needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
@@ -190,20 +190,20 @@ jobs:
           target_repo_token: ${{ secrets.GH_PAT }}
           upstream_sync_branch: ${{ env.UPSTREAM_BRANCH }}
           upstream_sync_repo: ${{ env.UPSTREAM_REPO }}
-      
+
       # Display a sample message based on the sync output var 'has_new_commits'
       - name: New commits found
         if: |
           needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
           vars.SCHEDULED_SYNC != 'false' && steps.sync.outputs.has_new_commits == 'true'
         run: echo "New commits were found to sync."
-    
+
       - name: No new commits
         if: |
-          needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' && 
+          needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true' &&
           vars.SCHEDULED_SYNC != 'false' && steps.sync.outputs.has_new_commits == 'false'
         run: echo "There were no new commits."
-      
+
       - name: Show value of 'has_new_commits'
         if: |
           needs.check_alive_and_permissions.outputs.WORKFLOW_PERMISSION == 'true'
@@ -218,10 +218,25 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           submodules: recursive
           ref: ${{ env.TARGET_BRANCH }}
-          
-      # Customize Loop: Download and apply patches
+
+     # Customize Loop: Download and apply patches
       - name: Customize Loop
         run: |
+
+          # The lines below add the customizations listed using the CustomizationSelect script
+          # The "\" is a continuation character
+          #   the line following a "\" cannot be blank - that causes the Action to never complete
+          /bin/bash -c "$(curl -fsSL \
+          https://raw.githubusercontent.com/loopandlearn/lnl-scripts/main/CustomizationSelect.sh)" \
+          dexcom_upload_readings \
+          future_carbs_4h \
+          customtypeone_looppatches \
+          2002 \
+          algorithm_experiments \
+          testflight_expiration_warning
+
+          # the final customization listed above CANNOT have a continuation character "\"
+          # more customizations can be pasted after this line
 
           # LoopWorkspace patches
           # -applies any patches located in the LoopWorkspace/patches/ directory
@@ -233,24 +248,24 @@ jobs:
           # Template for customizing submodule Loop (changes Loop app name to "CustomLoop")
           # Remove the "#" sign from the beginning of the line below to activate:
           #curl https://github.com/loopnlearn/Loop/commit/d206432b024279ef710df462b20bd464cd9682d4.patch | git apply --directory=Loop -v --whitespace=fix
-          
+
           # Submodule LoopKit patches:
-          # General template for customizing submodule LoopKit 
+          # General template for customizing submodule LoopKit
           # Copy url from a GitHub commit or pull request and insert below, and remove the "#" sign from the beginning of the line to activate:
           #curl url_to_github_commit.patch | git apply --directory=LoopKit -v --whitespace=fix
-          
+
           # Submodule xxxxx patches:
 
-          # Add patches for customization of additional submodules by following the templates above, 
+          # Add patches for customization of additional submodules by following the templates above,
           # and make sure to specify the submodule by setting "--directory=(submodule_name)".
           # Several patches may be added per submodule.
           # Adding comments (#) may be useful to easily tell the individual patches apart.
-          
-          
+
+
       # Patch Fastlane Match to not print tables
       - name: Patch Match Tables
         run: find /usr/local/lib/ruby/gems -name table_printer.rb | xargs sed -i "" "/puts(Terminal::Table.new(params))/d"
-      
+
       # Install project dependencies
       - name: Install Project Dependencies
         run: bundle install
@@ -258,10 +273,10 @@ jobs:
       # Sync the GitHub runner clock with the Windows time server (workaround as suggested in https://github.com/actions/runner/issues/2996)
       - name: Sync clock
         run: sudo sntp -sS time.windows.com
-      
+
       # Build signed Loop IPA file
       - name: Fastlane Build & Archive
-        run: bundle exec fastlane build_loop        
+        run: bundle exec fastlane build_loop
         env:
           TEAMID: ${{ secrets.TEAMID }}
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -269,7 +284,7 @@ jobs:
           FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
           FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-      
+
       # Upload to TestFlight
       - name: Fastlane upload to TestFlight
         run: bundle exec fastlane release
